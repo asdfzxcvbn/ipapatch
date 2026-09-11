@@ -120,15 +120,31 @@ func extractToPath(z *zip.ReadCloser, dir, name string) (string, error) {
 	}
 	defer f.Close()
 
-	output := filepath.Join(dir, filepath.Base(name))
-	ff, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
+	ff, err := os.CreateTemp(dir, ".ipapatch-exec-*")
 	if err != nil {
 		return "", err
 	}
-	defer ff.Close()
+	output := ff.Name()
 
-	_, err = io.Copy(ff, f)
-	return output, err
+	cleanup := func() {
+		_ = ff.Close()
+		_ = os.Remove(output)
+	}
+
+	if err = ff.Chmod(0755); err != nil {
+		cleanup()
+		return "", err
+	}
+	if _, err = io.Copy(ff, f); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err = ff.Close(); err != nil {
+		_ = os.Remove(output)
+		return "", err
+	}
+
+	return output, nil
 }
 
 func appendFileToUpdater(ud *zip.Updater, path, zippedPath string) error {
